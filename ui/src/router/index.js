@@ -8,6 +8,15 @@ const routes = [
     component: HomeView
   },
   {
+    path: '/analysis',
+    name: 'imageAnalysis',
+    component: () => import(/* webpackChunkName: "analysis" */ '../views/ImageAnalysisView.vue'),
+    meta: {
+      title: '图像分析',
+      description: '基于AI的松材线虫病图像识别和智能诊断'
+    }
+  },
+  {
     path: '/about',
     name: 'about',
     // route level code-splitting

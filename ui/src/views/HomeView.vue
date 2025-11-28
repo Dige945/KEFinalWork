@@ -3,6 +3,26 @@
     <!-- 顶部操作栏 -->
     <div class="top-bar">
       <div class="title">松材线虫病知识图谱系统</div>
+      
+      <!-- 导航菜单 -->
+      <div class="nav-menu">
+        <router-link to="/" class="nav-link" :class="{ active: $route.name === 'home' }">
+          <el-button type="text" :icon="Histogram">
+            知识图谱
+          </el-button>
+        </router-link>
+        <router-link to="/analysis" class="nav-link" :class="{ active: $route.name === 'imageAnalysis' }">
+          <el-button type="text" :icon="Camera">
+            图像分析
+          </el-button>
+        </router-link>
+        <router-link to="/about" class="nav-link" :class="{ active: $route.name === 'about' }">
+          <el-button type="text" :icon="InfoFilled">
+            关于系统
+          </el-button>
+        </router-link>
+      </div>
+
       <div class="search-box">
         <el-input
           v-model="newEntityName"
@@ -46,7 +66,6 @@
       </div>
     </div>
 
-    <!-- 相似词选择对话框 -->
     <el-dialog
       v-model="similarDialogVisible"
       title="选择相似实体"
@@ -248,7 +267,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Loading, Search, Connection, Back, Check } from '@element-plus/icons-vue'
+import { Plus, Refresh, Loading, Search, Connection, Back, Check, Histogram, Camera, InfoFilled } from '@element-plus/icons-vue'
 import KnowledgeGraph from '@/components/KnowledgeGraph.vue'
 import api from '@/api'
 
@@ -563,6 +582,36 @@ onMounted(() => {
   font-weight: bold;
   color: #333;
   white-space: nowrap;
+}
+
+.nav-menu {
+  display: flex;
+  gap: 8px;
+  margin-left: 20px;
+}
+
+.nav-link {
+  text-decoration: none;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.nav-link .el-button {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.nav-link:hover .el-button {
+  background: #f5f7fa;
+  color: #409eff;
+}
+
+.nav-link.active .el-button {
+  background: #409eff;
+  color: white;
 }
 
 .search-box {

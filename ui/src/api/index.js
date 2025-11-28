@@ -2,11 +2,12 @@
  * API服务模块 - 与后端通信
  */
 import axios from 'axios'
+import { API_CONFIG } from '@/config'
 
 // 创建axios实例
 const apiClient = axios.create({
-  baseURL: 'http://localhost:8000/api',
-  timeout: 30000,
+  baseURL: `${API_CONFIG.BASE_URL}/api`,
+  timeout: API_CONFIG.TIMEOUT,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -84,9 +85,9 @@ export default {
    * @param {string} newName - 新名称
    */
   updateNode(oldName, newName) {
-    return apiClient.put('/node/update', { 
-      old_name: oldName, 
-      new_name: newName 
+    return apiClient.put('/node/update', {
+      old_name: oldName,
+      new_name: newName
     })
   },
 
@@ -111,5 +112,45 @@ export default {
    */
   getRelations() {
     return apiClient.get('/relations')
+  },
+
+  /**
+   * 图像分析 - 识别松材线虫病相关实体并进行预测分析
+   * @param {FormData} formData - 包含图像文件和分析参数的FormData
+   */
+  analyzeImage(formData) {
+    return apiClient.post('/image/analyze', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      timeout: API_CONFIG.IMAGE_ANALYSIS_TIMEOUT // 图像分析可能需要更长时间
+    })
+  },
+
+  /**
+   * 验证实体组合的合理性
+   * @param {Object} data - { entities, validation_type }
+   */
+  validateEntities(data) {
+    return apiClient.post('/entities/validate', data)
+  },
+
+  /**
+   * 获取知识图谱更新建议
+   * @param {string} entityNames - 逗号分隔的实体名称（可选）
+   */
+  getUpdateSuggestions(entityNames = null) {
+    const params = entityNames ? { entity_names: entityNames } : {}
+    return apiClient.get('/knowledge/update-suggestions', { params })
+  },
+
+  /**
+   * 获取图像分析历史记录
+   * @param {number} limit - 返回记录数量限制
+   */
+  getAnalysisHistory(limit = 10) {
+    return apiClient.get('/image/analysis-history', {
+      params: { limit }
+    })
   }
 }

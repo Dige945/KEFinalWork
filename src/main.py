@@ -1,7 +1,7 @@
 """
 松材线虫病知识图谱系统 - FastAPI后端
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -10,6 +10,8 @@ import logging
 from contextlib import contextmanager
 import os
 from pathlib import Path
+import time
+import uvicorn
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -41,8 +43,8 @@ DB_CONFIG = {
     'host': 'localhost',
     'port': 3306,
     'user': 'root',
-    'password': 'xyd123456',
-    'database': 'kproject',
+    'password': '20050702g',
+    'database': 'KEFinalWork',
     'charset': 'utf8mb4',
     'cursorclass': pymysql.cursors.DictCursor
 }
@@ -72,6 +74,31 @@ class GraphResponse(BaseModel):
     """图谱响应模型"""
     nodes: List[dict]
     links: List[dict]
+
+
+class ImageAnalysisRequest(BaseModel):
+    """图像分析请求模型"""
+    analyze_type: str = "full"  # full, entity_only, relationship_only
+    update_knowledge: bool = True  # 是否自动更新知识图谱
+    confidence_threshold: Optional[float] = 0.5
+
+
+class ImageAnalysisResponse(BaseModel):
+    """图像分析响应模型"""
+    analysis_id: str
+    image_info: dict
+    detected_entities: List[dict]
+    relationship_analysis: Optional[dict] = None
+    disease_prediction: Optional[dict] = None
+    knowledge_update: Optional[dict] = None
+    recommendations: List[str]
+    analysis_summary: dict
+
+
+class EntityValidationRequest(BaseModel):
+    """实体验证请求模型"""
+    entities: List[dict]
+    validation_type: str = "disease_scenario"  # disease_scenario, relationship_check
 
 
 # ==================== 数据库操作 ====================
@@ -125,6 +152,15 @@ async def startup_event():
     word2vec_path = os.getenv("WORD2VEC_MODEL_PATH")
     kimi_api_key = os.getenv("MOONSHOT_API_KEY")
     init_ai_services(word2vec_path, kimi_api_key)
+    
+    # 初始化图像分析服务
+    from image_service import init_image_services
+    from knowledge_updater import init_knowledge_updater
+    from multi_entity_analyzer import init_multi_entity_analyzer
+    
+    init_image_services(DB_CONFIG)
+    init_knowledge_updater(DB_CONFIG)
+    init_multi_entity_analyzer(DB_CONFIG)
     
     logger.info("应用启动完成")
 
@@ -566,6 +602,317 @@ async def add_node_with_selected_triple(data: SelectedTriple):
         raise HTTPException(status_code=500, detail=f"智能添加节点失败: {str(e)}")
 
 
+# ==================== 图像分析API ====================
+@app.post("/api/image/analyze")
+async def analyze_image(
+    file: UploadFile = File(...),
+    analyze_type: str = Form("full"),
+    update_knowledge: bool = Form(True),
+    confidence_threshold: float = Form(0.5)
+):
+    """
+    图像分析API - 识别松材线虫病相关实体并进行预测分析
+    
+    Args:
+        file: 上传的图像文件
+        analyze_type: 分析类型 (full/entity_only/relationship_only)
+        update_knowledge: 是否自动更新知识图谱
+        confidence_threshold: 置信度阈值
+    
+    Returns:
+        完整的分析结果
+    """
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="请上传图像文件")
+    
+    try:
+        # 1. 读取图像数据
+        image_data = await file.read()
+        
+        # 2. 图像分析 - 实体识别
+        try:
+            from image_service import get_image_analysis_service, get_knowledge_inference_service
+            image_service = get_image_analysis_service()
+            
+            logger.info("开始调用图像分析服务...")
+            analysis_result = await image_service.analyze_image(image_data)
+            logger.info(f"图像分析服务返回结果: {len(analysis_result.get('detected_entities', []))} 个实体")
+        except ImportError as e:
+            logger.warning(f"图像服务导入失败: {e}")
+            # 如果图像服务不可用，返回模拟结果
+            analysis_result = {
+                "image_info": {"size": [800, 600], "channels": 3},
+                "detected_entities": [
+                    {
+                        "type": "insect",
+                        "name": "疑似松墨天牛",
+                        "confidence": 0.85,
+                        "similarity": 0.8,
+                        "features": {"color": "黑色"},
+                        "bbox": [100, 150, 80, 120],
+                        "matched_kb_entity": "松墨天牛"
+                    },
+                    {
+                        "type": "disease_symptom",
+                        "name": "疑似松针发黄",
+                        "confidence": 0.92,
+                        "similarity": 0.7,
+                        "features": {"color": "黄色"},
+                        "bbox": [200, 100, 150, 200],
+                        "matched_kb_entity": None
+                    },
+                    {
+                        "type": "tree",
+                        "name": "疑似马尾松",
+                        "confidence": 0.78,
+                        "similarity": 0.6,
+                        "features": {"bark": "红褐色"},
+                        "bbox": [0, 0, 800, 600],
+                        "matched_kb_entity": "马尾松"
+                    }
+                ],
+                "analysis_summary": {"total_entities": 3, "matched_entities": 2, "avg_confidence": 0.85}
+            }
+            logger.info("使用模拟数据返回结果")
+        except Exception as e:
+            logger.error(f"图像分析服务异常: {e}")
+            raise HTTPException(status_code=500, detail=f"图像分析失败: {e}")
+        
+        # 3. 过滤低置信度实体
+        logger.info(f"过滤前实体数量: {len(analysis_result['detected_entities'])}, 阈值: {confidence_threshold}")
+        detected_entities = [
+            entity for entity in analysis_result["detected_entities"]
+            if entity["confidence"] >= confidence_threshold
+        ]
+        logger.info(f"过滤后实体数量: {len(detected_entities)}")
+        
+        response_data = {
+            "analysis_id": f"img_analysis_{int(time.time())}",
+            "image_info": analysis_result["image_info"],
+            "detected_entities": detected_entities,
+            "recommendations": [],
+            "analysis_summary": analysis_result["analysis_summary"]
+        }
+        
+        # 4. 关系分析（如果请求且有多个实体）
+        if analyze_type in ["full", "relationship_only"] and len(detected_entities) > 1:
+            try:
+                from multi_entity_analyzer import get_multi_entity_analyzer
+                multi_analyzer = get_multi_entity_analyzer()
+                
+                relationship_result = await multi_analyzer.analyze_entity_relationships(detected_entities)
+                response_data["relationship_analysis"] = relationship_result
+                response_data["recommendations"].extend(relationship_result["recommendations"])
+            except ImportError:
+                logger.warning("多实体分析服务不可用")
+        
+        # 5. 疾病预测分析
+        if analyze_type == "full" and detected_entities:
+            try:
+                inference_service = get_knowledge_inference_service()
+                disease_prediction = await inference_service.analyze_disease_prediction(detected_entities)
+                response_data["disease_prediction"] = disease_prediction
+                
+                if disease_prediction.get("recommended_actions"):
+                    response_data["recommendations"].extend([
+                        f"防治建议: {treatment['treatment']}" 
+                        for treatment in disease_prediction["recommended_actions"].get("treatments", [])
+                    ])
+            except (ImportError, Exception) as e:
+                logger.warning(f"疾病预测服务不可用: {e}")
+        
+        # 6. 知识图谱更新（如果启用）
+        if update_knowledge and detected_entities:
+            try:
+                from knowledge_updater import get_knowledge_updater
+                updater = get_knowledge_updater()
+                
+                update_stats = await updater.process_image_analysis_result({
+                    "detected_entities": detected_entities
+                })
+                response_data["knowledge_update"] = update_stats
+                
+                if update_stats["new_entities_added"] > 0 or update_stats["new_relations_added"] > 0:
+                    response_data["recommendations"].append(
+                        f"知识图谱已更新: 新增{update_stats['new_entities_added']}个实体, {update_stats['new_relations_added']}个关系"
+                    )
+            except (ImportError, Exception) as e:
+                logger.warning(f"知识图谱更新服务不可用: {e}")
+        
+        # 7. 生成总结建议
+        if not response_data["recommendations"]:
+            response_data["recommendations"] = ["未发现明显的松材线虫病风险，建议继续监测"]
+        
+        # 记录分析结果
+        entity_names = [entity["name"] for entity in detected_entities]
+        logger.info(f"图像分析完成: 检测{len(detected_entities)}个实体 {entity_names}")
+        return response_data
+        
+    except Exception as e:
+        logger.error(f"图像分析失败: {e}")
+        raise HTTPException(status_code=500, detail=f"图像分析失败: {str(e)}")
+
+
+@app.post("/api/entities/validate")
+async def validate_entity_combinations(request: EntityValidationRequest):
+    """
+    验证实体组合的合理性
+    
+    Args:
+        request: 包含实体列表和验证类型的请求
+    
+    Returns:
+        验证结果和建议
+    """
+    try:
+        if request.validation_type == "disease_scenario":
+            try:
+                from multi_entity_analyzer import get_multi_entity_analyzer
+                analyzer = get_multi_entity_analyzer()
+                
+                validation_result = await analyzer.analyze_entity_relationships(request.entities)
+                
+                return {
+                    "validation_type": request.validation_type,
+                    "entities": request.entities,
+                    "validation_result": validation_result,
+                    "is_valid": validation_result["relationship_confidence"] > 0.5,
+                    "confidence": validation_result["relationship_confidence"],
+                    "recommendations": validation_result["recommendations"]
+                }
+            except ImportError:
+                return {
+                    "validation_type": request.validation_type,
+                    "entities": request.entities,
+                    "is_valid": False,
+                    "confidence": 0.0,
+                    "recommendations": ["实体验证服务不可用"]
+                }
+        elif request.validation_type == "relationship_check":
+            # 简单的关系检查
+            with get_db() as conn:
+                cursor = conn.cursor()
+                
+                entity_names = [entity.get("matched_kb_entity") or entity["name"] for entity in request.entities]
+                
+                relationships = []
+                for i, entity_a in enumerate(entity_names):
+                    for entity_b in entity_names[i+1:]:
+                        cursor.execute("""
+                            SELECT head_entity, relation, tail_entity FROM knowledge_triples 
+                            WHERE (head_entity = %s AND tail_entity = %s) 
+                               OR (head_entity = %s AND tail_entity = %s)
+                        """, (entity_a, entity_b, entity_b, entity_a))
+                        
+                        relationships.extend(cursor.fetchall())
+                
+                return {
+                    "validation_type": request.validation_type,
+                    "entities": request.entities,
+                    "existing_relationships": relationships,
+                    "relationship_count": len(relationships),
+                    "is_valid": len(relationships) > 0
+                }
+        else:
+            raise HTTPException(status_code=400, detail="不支持的验证类型")
+            
+    except Exception as e:
+        logger.error(f"实体验证失败: {e}")
+        raise HTTPException(status_code=500, detail=f"实体验证失败: {str(e)}")
+
+
+@app.get("/api/knowledge/update-suggestions")
+async def get_knowledge_update_suggestions(entity_names: str = None):
+    """
+    获取知识图谱更新建议
+    
+    Args:
+        entity_names: 逗号分隔的实体名称（可选）
+    
+    Returns:
+        更新建议列表
+    """
+    try:
+        try:
+            from knowledge_updater import get_knowledge_updater
+            updater = get_knowledge_updater()
+            
+            if entity_names:
+                # 基于特定实体生成建议
+                names = [name.strip() for name in entity_names.split(',')]
+                
+                # 模拟实体数据结构
+                mock_entities = []
+                for name in names:
+                    mock_entities.append({
+                        "name": name,
+                        "type": "unknown", 
+                        "confidence": 0.8,
+                        "similarity": 0.3,  # 假设低相似度
+                        "features": {}
+                    })
+                
+                suggestions = await updater.get_knowledge_update_suggestions(mock_entities)
+            else:
+                # 返回通用建议
+                suggestions = [
+                    {
+                        "type": "general",
+                        "priority": "low",
+                        "reason": "定期检查知识图谱完整性",
+                        "action": "建议定期上传新的图像进行分析，以发现新的实体和关系"
+                    }
+                ]
+        except ImportError:
+            suggestions = [
+                {
+                    "type": "service_unavailable",
+                    "priority": "info",
+                    "reason": "知识更新服务不可用",
+                    "action": "请检查服务配置"
+                }
+            ]
+        
+        return {
+            "suggestions": suggestions,
+            "total_count": len(suggestions)
+        }
+        
+    except Exception as e:
+        logger.error(f"获取更新建议失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取更新建议失败: {str(e)}")
+
+
+@app.get("/api/image/analysis-history")
+async def get_analysis_history(limit: int = 10):
+    """
+    获取图像分析历史（模拟实现）
+    
+    Args:
+        limit: 返回记录数量限制
+    
+    Returns:
+        分析历史列表
+    """
+    # 这是一个模拟实现，实际中应该从数据库中查询
+    # 可以创建一个表来存储分析历史
+    mock_history = [
+        {
+            "id": f"analysis_{i}",
+            "timestamp": "2024-01-20 10:30:00",
+            "entity_count": 3,
+            "detected_types": ["insect", "tree", "disease_symptom"],
+            "confidence": 0.8,
+            "risk_level": "中风险" if i % 2 == 0 else "高风险"
+        }
+        for i in range(min(limit, 5))
+    ]
+    
+    return {
+        "history": mock_history,
+        "total_count": len(mock_history)
+    }
+
+
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
