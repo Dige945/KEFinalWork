@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class Word2VecService:
     """Word2Vec服务"""
-    
+
     def __init__(self, model_path: Optional[str] = None):
         """
         初始化Word2Vec模型
@@ -21,7 +21,7 @@ class Word2VecService:
         """
         self.model = None
         self.model_path = model_path
-        
+
         if model_path and os.path.exists(model_path):
             try:
                 from gensim.models import KeyedVectors
@@ -33,7 +33,7 @@ class Word2VecService:
                 self.model = None
         else:
             logger.warning("未提供Word2Vec模型路径或文件不存在，将使用Mock模式")
-    
+
     def find_most_similar(self, word: str, topn: int = 1) -> Optional[str]:
         """
         找到与给定词最相似的词
@@ -57,10 +57,10 @@ class Word2VecService:
                 logger.warning(f"词 '{word}' 不在Word2Vec模型词汇表中")
             except Exception as e:
                 logger.error(f"Word2Vec查询失败: {e}")
-        
+
         # Mock模式：返回一个预设的相似词
         return self._mock_similar_word(word)
-    
+
     def find_most_similar_topn(self, word: str, topn: int = 10) -> List[tuple]:
         """
         找到与给定词最相似的Top-N个词
@@ -81,10 +81,10 @@ class Word2VecService:
                 logger.warning(f"词 '{word}' 不在Word2Vec模型词汇表中")
             except Exception as e:
                 logger.error(f"Word2Vec查询失败: {e}")
-        
+
         # Mock模式：返回预设的相似词列表
         return self._mock_similar_words_topn(word, topn)
-    
+
     def _mock_similar_word(self, word: str) -> str:
         """
         Mock函数：模拟返回相似词
@@ -116,11 +116,11 @@ class Word2VecService:
             "林区": "松林",
             "山区": "松林",
         }
-        
+
         similar = mock_mappings.get(word, "松树")  # 默认返回"松树"
         logger.info(f"Mock模式: {word} -> {similar}")
         return similar
-    
+
     def _mock_similar_words_topn(self, word: str, topn: int = 10) -> List[tuple]:
         """
         Mock函数：模拟返回Top-N相似词
@@ -149,20 +149,20 @@ class Word2VecService:
                 ("环境条件", 0.63), ("气候条件", 0.60)
             ],
         }
-        
+
         # 如果word在预设组中，返回对应的相似词
         if word in mock_similar_groups:
             result = mock_similar_groups[word][:topn]
             logger.info(f"Mock模式: {word} -> {len(result)}个相似词")
             return result
-        
+
         # 默认返回一组通用的松材线虫病相关词
         default_similar = [
             ("松树", 0.75), ("马尾松", 0.72), ("松材线虫", 0.70), ("松墨天牛", 0.67),
             ("感染", 0.64), ("传播", 0.61), ("防治", 0.58), ("病害", 0.55),
             ("林木", 0.52), ("疫情", 0.50)
         ]
-        
+
         result = default_similar[:topn]
         logger.info(f"Mock模式(默认): {word} -> {len(result)}个相似词")
         return result
@@ -170,7 +170,7 @@ class Word2VecService:
 
 class KimiService:
     """Kimi (Moonshot AI) API服务"""
-    
+
     def __init__(self, api_key: Optional[str] = None):
         """
         初始化Kimi API客户端
@@ -180,7 +180,7 @@ class KimiService:
         """
         self.api_key = api_key or os.getenv("MOONSHOT_API_KEY", "")
         self.model = "moonshot-v1-8k"  # 默认模型
-        
+
         if not self.api_key:
             logger.warning("未设置MOONSHOT_API_KEY，Kimi API将无法使用")
             self.client = None
@@ -196,7 +196,7 @@ class KimiService:
                 logger.error(f"Kimi API客户端初始化失败: {e}")
                 logger.warning("将使用Mock模式进行关系推理")
                 self.client = None
-    
+
     def infer_relation(self, entity_a: str, entity_c: str, valid_relations: List[str]) -> str:
         """
         使用Kimi API推理两个实体之间的关系
@@ -212,7 +212,7 @@ class KimiService:
         if not self.client or not valid_relations:
             # 如果API不可用或没有有效关系，使用Mock模式
             return self._mock_relation(entity_a, entity_c, valid_relations)
-        
+
         try:
             # 构建prompt
             relations_str = "、".join(valid_relations)
@@ -227,9 +227,9 @@ class KimiService:
 3. 如果多个关系都合理，选择最直接、最重要的那个
 
 关系名称："""
-            
+
             logger.info(f"正在调用Kimi API推理关系: {entity_a} <-> {entity_c}")
-            
+
             # 调用Kimi API
             response = self.client.chat.completions.create(
                 model="moonshot-v1-8k",
@@ -246,10 +246,10 @@ class KimiService:
                 temperature=0.3,
                 max_tokens=50
             )
-            
+
             # 提取关系
             relation = response.choices[0].message.content.strip()
-            
+
             # 验证关系是否在有效列表中
             if relation in valid_relations:
                 logger.info(f"Kimi API推理成功: {entity_a} --[{relation}]--> {entity_c}")
@@ -257,11 +257,11 @@ class KimiService:
             else:
                 logger.warning(f"Kimi返回的关系 '{relation}' 不在有效列表中，使用Mock模式")
                 return self._mock_relation(entity_a, entity_c, valid_relations)
-                
+
         except Exception as e:
             logger.error(f"Kimi API调用失败: {e}")
             return self._mock_relation(entity_a, entity_c, valid_relations)
-    
+
     def _mock_relation(self, entity_a: str, entity_c: str, valid_relations: List[str]) -> str:
         """
         Mock函数：基于规则推理关系
@@ -269,14 +269,14 @@ class KimiService:
         """
         if not valid_relations:
             return "相关"
-        
+
         # 预设一些规则
         # 如果entity_a是树种，entity_c是松树/马尾松等，关系可能是"属于"
         tree_keywords = ["松", "树", "林"]
         insect_keywords = ["天牛", "昆虫", "媒介"]
         disease_keywords = ["线虫", "病", "症状"]
         env_keywords = ["温度", "湿度", "气候", "环境"]
-        
+
         # 简单的规则匹配
         if any(k in entity_a for k in tree_keywords):
             if "易感" in valid_relations and any(k in entity_c for k in disease_keywords):
@@ -298,130 +298,11 @@ class KimiService:
         else:
             # 默认使用第一个关系
             relation = valid_relations[0]
-        
+
         logger.info(f"Mock推理: {entity_a} --[{relation}]--> {entity_c}")
         return relation
-    
-    def extract_high_level_nodes_by_rules(self, all_nodes: List[str], node_degrees: dict = None) -> set:
-        """
-        基于规则提取高级节点（稳定、可预测的方法）
-        
-        Args:
-            all_nodes: 所有节点名称列表
-            node_degrees: 节点度数字典 {node_name: degree}，可选
-        
-        Returns:
-            高级节点集合
-        """
-        if not all_nodes:
-            return set()
-        
-        high_level_nodes = set()
-        
-        # 1. 明确的类别关键词（这些一定是高级节点）
-        category_keywords = {
-            # 类别概念
-            '天牛', '线虫', '松属', '病害', '昆虫', '真菌', '病毒', '细菌',
-            # 技术/方法
-            '技术', '方法', '算法', '模型', '指数', '特征', '指标',
-            # 学科/领域
-            '学', '保护学', '昆虫学', '病理学', '检疫学', '生态学',
-            # 防治措施
-            '防治', '措施', '检疫', '监测', '诊断', '治疗',
-            # 地理/行政
-            '省份', '城市', '国家', '地区', '区域',
-            # 时间
-            '年份', '时间', '季节',
-            # 其他概念
-            '风险评估', '早期诊断', '生态服务', '能量代谢', '生理指标',
-            '基因', '代谢通路', '种群动态', '植被指数', '光谱特征',
-            '多尺度监测', '研究模型', '软件'
-        }
-        
-        # 2. 类别后缀模式
-        category_suffixes = [
-            '学', '技术', '方法', '措施', '防治', '监测', '诊断', '评估',
-            '指标', '特征', '指数', '模型', '算法', '通路'
-        ]
-        
-        # 3. 类别前缀模式
-        category_prefixes = [
-            '物理', '化学', '生物', '营林', '检疫', '分子', '遥感',
-            '森林', '林业', '生态', '环境'
-        ]
-        
-        for node in all_nodes:
-            node = node.strip()
-            if not node:
-                continue
-            
-            is_high_level = False
-            
-            # 规则1: 完全匹配类别关键词
-            if node in category_keywords:
-                is_high_level = True
-            
-            # 规则2: 短名称（1-3个字符）且包含类别词
-            elif len(node) <= 3:
-                for keyword in ['天牛', '线虫', '松属', '病害', '昆虫', '真菌']:
-                    if keyword in node:
-                        is_high_level = True
-                        break
-            
-            # 规则3: 以类别后缀结尾
-            elif any(node.endswith(suffix) for suffix in category_suffixes):
-                # 进一步检查：如果名称较短（<=6个字符），很可能是高级节点
-                if len(node) <= 6:
-                    is_high_level = True
-                # 或者如果以"学"结尾
-                elif node.endswith('学'):
-                    is_high_level = True
-            
-            # 规则4: 以类别前缀开头且名称较短
-            elif any(node.startswith(prefix) for prefix in category_prefixes):
-                if len(node) <= 8:
-                    is_high_level = True
-            
-            # 规则5: 基于节点度数（如果提供）
-            if not is_high_level and node_degrees:
-                degree = node_degrees.get(node, 0)
-                # 如果节点连接数很多（>=10），且名称较短（<=4个字符），可能是高级节点
-                if degree >= 10 and len(node) <= 4:
-                    # 进一步检查：不包含明显的具体物种特征
-                    if not any(modifier in node for modifier in ['松', '天牛', '线虫', '病']):
-                        is_high_level = True
-            
-            # 排除规则：如果包含类别词但更长，通常是具体实例
-            if is_high_level:
-                for category in ['天牛', '线虫', '松属', '病害', '松', '虫']:
-                    if category in node and len(node) > len(category) + 2:
-                        # 如果节点名称明显比类别词长，可能是具体实例
-                        is_high_level = False
-                        break
-            
-            if is_high_level:
-                high_level_nodes.add(node)
-        
-        logger.info(f"基于规则提取了 {len(high_level_nodes)} 个高级节点")
-        return high_level_nodes
-    
-    def extract_high_level_nodes(self, all_nodes: List[str], node_degrees: dict = None) -> set:
-        """
-        提取高级节点（概念性、抽象性、类别性的节点）
-        使用基于规则的方法，稳定、可预测
-        
-        Args:
-            all_nodes: 所有节点名称列表
-            node_degrees: 节点度数字典 {node_name: degree}，可选
-        
-        Returns:
-            高级节点集合
-        """
-        if not all_nodes:
-            return set()
-        
-        return self.extract_high_level_nodes_by_rules(all_nodes, node_degrees)
-    
+
+
 # 全局服务实例
 word2vec_service = None
 kimi_service = None
@@ -430,16 +311,16 @@ kimi_service = None
 def init_ai_services(word2vec_model_path: Optional[str] = None, kimi_api_key: Optional[str] = None):
     """
     初始化AI服务
-    
+
     Args:
         word2vec_model_path: Word2Vec模型路径
         kimi_api_key: Kimi API密钥
     """
     global word2vec_service, kimi_service
-    
+
     word2vec_service = Word2VecService(word2vec_model_path)
     kimi_service = KimiService(kimi_api_key)
-    
+
     logger.info("AI服务初始化完成")
 
 
